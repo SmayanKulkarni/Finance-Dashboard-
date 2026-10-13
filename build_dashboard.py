@@ -26,6 +26,10 @@ CSV = os.path.join(HERE, "data", "financial_loan.csv")
 OUT = os.environ.get("BLD_OUT", os.path.join(HERE, "Bank_Loan_Dashboard.xlsx"))
 LOGO = os.path.join(HERE, "assets", "bank_logo.png")
 CACHE_FILE = os.environ.get("BLD_CACHE")  # recalculated copy used to pre-fill formula results
+# Screenshot mode (make_screenshots.py): LibreOffice cannot draw cell-linked chart labels
+# or FILTER spills, so draw number-formatted labels and static grid rows instead.
+SHOT = bool(os.environ.get("BLD_SHOT"))
+SHOT_NF = '[>=1000]#,##0.0,"K";0'
 
 
 def main_two_pass():
@@ -366,7 +370,10 @@ def nav_buttons(ws, page, rows, c1, c2):
         r1, r2 = r
         if (r1, c1) != (r2, c2):
             ws.merge_range(r1, c1, r2, c2, "", fmt)
-        ws.write_url(r1, c1, f"internal:'{name}'!A1", fmt, name, tip=f"Go to {name}")
+        if SHOT:
+            ws.write(r1, c1, name, fmt)
+        else:
+            ws.write_url(r1, c1, f"internal:'{name}'!A1", fmt, name, tip=f"Go to {name}")
 
 
 def dropdown(ws, page, slicer, r, c1, c2, label_fmt, dd_fmt, label=None):
@@ -604,7 +611,7 @@ def breakdown(title, dim_label, cats, data_name, exclude, sort=False, label_kind
             calc.ws.write_formula(r, 11, f"=IFERROR({rc(r, 9)}/{tot},0)", F(num_format=NF["pct1"]))
             if label_kind == "tree":
                 calc.ws.write_formula(
-                    r, 10, f'=IF({rc(r, 11)}<0.035,"",{rc(r, 8)}&CHAR(10)&'
+                    r, 10, f'=IF({rc(r, 11)}<0.1,"",{rc(r, 8)}&CHAR(10)&'
                            f'{money_label(rc(r, 9), MONEY)})')
             else:
                 calc.ws.write_formula(r, 10, f"=INDEX({rng(5)},MATCH(LARGE({G},{rc(r, 7)}),{G},0))")
@@ -658,6 +665,13 @@ def base_chart(kind, title_ref, subtype=None, bg=C["card"]):
 def custom_labels(b, col, n=None):
     n = n or b["n"]
     return [{"value": "=" + absref("Calc", b["r0"] + i, col)} for i in range(n)]
+
+
+def labels(dl, custom):
+    """Data labels linked to Calc text cells (or number-formatted in screenshot mode)."""
+    if SHOT:
+        return {**dl, "num_format": SHOT_NF}
+    return {**dl, "custom": custom}
 
 
 def gauge(ws, pct_ref, rest_ref, color, r, c, w, h):
@@ -768,8 +782,8 @@ line.add_series({
     "line": {"color": C["line"], "width": 2.75},
     "marker": {"type": "circle", "size": 7, "fill": {"color": C["line"]},
                "border": {"color": C["line"]}},
-    "data_labels": {"value": True, "position": "above", "font": {**WHITE, "bold": True},
-                    "custom": custom_labels(B_MONTH, 5)},
+    "data_labels": labels({"value": True, "position": "above", "font": {**WHITE, "bold": True}},
+                          custom_labels(B_MONTH, 5)),
 })
 area.combine(line)
 area.set_x_axis({"num_font": WHITE, "line": {"none": True}, "major_tick_mark": "none",
@@ -804,8 +818,8 @@ donut.add_series({
     "categories": cat_ref(B_TERM, 0), "values": cat_ref(B_TERM, 4),
     "points": [{"fill": {"color": C["t36"]}, "border": {"color": C["card"]}},
                {"fill": {"color": C["t60"]}, "border": {"color": C["card"]}}],
-    "data_labels": {"value": True, "font": {**WHITE, "bold": True, "color": "#0B0B0B"},
-                    "custom": custom_labels(B_TERM, 5)},
+    "data_labels": labels({"value": True, "font": {**WHITE, "bold": True, "color": "#0B0B0B"}},
+                          custom_labels(B_TERM, 5)),
 })
 donut.set_hole_size(55)
 donut.set_legend({"position": "top", "font": WHITE})
@@ -817,8 +831,8 @@ def hbar(b, color, r, c, w, h):
     ch.add_series({
         "categories": cat_ref(b, 8), "values": cat_ref(b, 9),
         "fill": {"color": color}, "border": {"none": True}, "gap": 35,
-        "data_labels": {"value": True, "position": "outside_end", "font": WHITE,
-                        "custom": custom_labels(b, 10)},
+        "data_labels": labels({"value": True, "position": "outside_end", "font": WHITE},
+                              custom_labels(b, 10)),
     })
     ch.set_y_axis({"reverse": True, "num_font": WHITE, "line": {"none": True},
                    "major_tick_mark": "none"})
@@ -838,9 +852,13 @@ for k in reversed(range(B_HOME["n"])):
         "values": "=" + absref("Calc", rr, 9),
         "fill": {"color": HOME_COLORS[k % len(HOME_COLORS)]},
         "border": {"color": C["card"], "width": 1.5}, "gap": 4, "overlap": 100,
-        "data_labels": {"value": True, "position": "inside_base",
-                        "font": {**WHITE, "size": 11, "bold": True},
-                        "custom": [{"value": "=" + absref("Calc", rr, 10)}]},
+        "data_labels": (
+            {"series_name": True, "value": True, "separator": "\n", "position": "center",
+             "font": {**WHITE, "size": 11, "bold": True}, "num_format": SHOT_NF}
+            if CACHE.get(("Calc", rr, 11), 0) >= 0.10 else {"value": False}) if SHOT else
+        {"value": True, "position": "center",
+         "font": {**WHITE, "size": 11, "bold": True},
+         "custom": [{"value": "=" + absref("Calc", rr, 10)}]},
     })
 tree.set_x_axis({"visible": False})
 tree.set_y_axis({"visible": False, "major_gridlines": {"visible": False}})
@@ -861,9 +879,15 @@ for j, h in enumerate(["id", "purpose", "home_ownership", "grade", "sub_grade", 
                                  align="center", bottom=2, bottom_color=C["blue"]))
 conds = "*".join(f'(({SEL["Details"][s]}="All")+({DIM[s]}={SEL["Details"][s]}))'
                  for s in PAGE_FILTERS["Details"])
-ws_det.write_dynamic_array_formula(
-    14, 1, 14, 1,
-    f'=FILTER(Data!$A$2:$J${LAST},{conds},"No loans match the selected filters")')
+if SHOT:
+    for i, row in enumerate(df.iloc[:30, :10].itertuples(index=False)):
+        for j, v in enumerate(row):
+            ws_det.write(14 + i, 1 + j, v.to_pydatetime() if hasattr(v, "to_pydatetime") else v,
+                         F(**{"bg_color": C["page"], "font_color": C["text"], **det_col_fmt[j]}))
+else:
+    ws_det.write_dynamic_array_formula(
+        14, 1, 14, 1,
+        f'=FILTER(Data!$A$2:$J${LAST},{conds},"No loans match the selected filters")')
 ws_det.conditional_format(14, 1, 14 + N, 10, {
     "type": "formula", "criteria": "=AND($B15<>\"\",MOD(ROW(),2)=0)",
     "format": wb.add_format({"bg_color": C["row1"]})})
@@ -947,7 +971,7 @@ for ws in (ws_sum, ws_ovr):
 ws_det.set_landscape()
 ws_det.set_paper(9)
 ws_det.set_margins(0.2, 0.2, 0.2, 0.2)
-ws_det.print_area(0, 0, 14 + N, 10)
+ws_det.print_area(0, 0, 43 if SHOT else 14 + N, 10)
 ws_det.repeat_rows(13)
 ws_det.fit_to_pages(1, 0)
 

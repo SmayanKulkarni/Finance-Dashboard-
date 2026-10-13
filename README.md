@@ -4,6 +4,19 @@ An Excel version of the Power BI **Bank Loan Analysis** project
 ([video](https://youtu.be/3I8wd1AShXs)), built on the project dataset
 `data/financial_loan.csv` (38,576 loans, Jan–Dec 2021).
 
+## Screenshots
+
+### Summary
+![Summary dashboard](docs/screenshots/summary.png)
+
+### Overview
+![Overview dashboard](docs/screenshots/overview.png)
+
+### Details
+![Details dashboard](docs/screenshots/details.png)
+
+## Getting started
+
 **Open `Bank_Loan_Dashboard.xlsx`** in Excel 2021 or Microsoft 365. It needs no macros, add-ins or data connections.
 
 | Sheet | What's on it |
@@ -50,6 +63,12 @@ python build_dashboard.py
 If LibreOffice is installed, the build calculates the workbook once and stores the results in the
 file. KPIs, chart labels and titles then show correct values even in Excel's Protected View,
 before you click "Enable Editing". Without LibreOffice, Excel calculates everything when the file opens.
+
+To regenerate the screenshots (needs LibreOffice and poppler's `pdftoppm`):
+
+```bash
+python make_screenshots.py   # writes docs/screenshots/*.png
+```
 
 **Note:** the Details grid uses `FILTER`, so it needs Excel 2021 or Microsoft 365. The rest of the workbook
 works in Excel 2010 and later.
